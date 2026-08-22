@@ -478,8 +478,21 @@ func (m *Model) pickView() string {
 		}
 	}
 	b.WriteString(" " + styleMuted.Render(fmt.Sprintf("%d datasets (file systems and volumes)", len(m.datasets))) + f + "\n")
-	b.WriteString(styleHeader.Render(" "+fit("Dataset", max(20, m.width-36))+" "+fit("Type", 10)+" "+fit("Mount point", 24)) + "\n")
 	vis := m.pickVisible()
+	// the name column is as wide as the widest (indented) name, the mount
+	// point gets the rest
+	wName := 20
+	for _, i := range vis {
+		d := m.datasets[i]
+		n := len([]rune(d.Name))
+		if m.pickFilter == "" && d.Depth() > 0 {
+			n = 2*d.Depth() + 2 + len([]rune(d.Name[strings.LastIndexByte(d.Name, '/')+1:]))
+		}
+		wName = max(wName, n)
+	}
+	wName = min(wName, max(20, m.width-2-11-24))
+	wMount := max(10, m.width-wName-2-11-1)
+	b.WriteString(styleHeader.Render(" "+fit("Dataset", wName)+" "+fit("Type", 10)+" "+fit("Mount point", wMount)) + "\n")
 	h := max(3, m.height-6)
 	for i := m.pickOffset; i < len(vis) && i < m.pickOffset+h; i++ {
 		d := m.datasets[vis[i]]
@@ -500,10 +513,10 @@ func (m *Model) pickView() string {
 		} else if d.Mountpoint != "none" && d.Mountpoint != "legacy" {
 			mp = d.Mountpoint + " (not mounted)"
 		}
-		line := " " + fit(name, max(20, m.width-36)) + " " + fit(typ, 10) + " " + fit(mp, 24)
 		if d.Name == m.pickDef {
-			line += " ●"
+			mp += " ●"
 		}
+		line := " " + fit(name, wName) + " " + fit(typ, 10) + " " + fit(mp, wMount)
 		if i == m.pickCursor {
 			line = styleSelected.Width(m.width).Render(line)
 		} else if d.Name == m.pickDef {
