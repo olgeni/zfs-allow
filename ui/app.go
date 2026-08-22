@@ -23,7 +23,8 @@ const (
 	scrForm
 	scrPlan
 	scrBusy
-	scrView // help, keys, effective, ancestors (viewport)
+	scrView   // help, keys, effective, ancestors (viewport)
+	scrPicker // filterable list (who, user, preset)
 )
 
 type (
@@ -83,6 +84,11 @@ type Model struct {
 	// editor
 	ed      *editor
 	editIdx int // row being edited, -1 for a new one
+
+	// list picker
+	pk      *picker
+	pkDone  func(m *Model, value string) tea.Cmd
+	pkAbort func(m *Model)
 
 	// forms
 	form      *form
@@ -240,6 +246,45 @@ func (m *Model) workingListing() *delegation.Listing {
 	return &delegation.Listing{Dataset: m.listing.Dataset, Own: m.cur, Ancestors: m.listing.Ancestors}
 }
 
+// openPicker shows a filterable list; done gets the chosen value.
+func (m *Model) openPicker(title, desc string, items []pickItem, initial string, done func(m *Model, value string) tea.Cmd, abort func(m *Model)) tea.Cmd {
+	m.pk = newPicker(title, desc, items, initial, m.width, m.height)
+	m.pkDone, m.pkAbort = done, abort
+	m.prevScr, m.scr = m.scr, scrPicker
+	return nil
+}
+
+// whoItems lists everyone, the manual entry, the users and the groups.
+func (m *Model) whoItems() []pickItem {
+	items := []pickItem{
+		{"everyone                   — every user (zfs allow -e)", "everyone"},
+		{"» type a principal manually (user:NAME, group:NAME, user:UID, group:GID)…", manualWho},
+	}
+	for _, u := range m.users {
+		items = append(items, pickItem{fmt.Sprintf("user:%-20s (uid %d)", u.Name, u.ID), "user:" + u.Name})
+	}
+	for _, g := range m.groups {
+		items = append(items, pickItem{fmt.Sprintf("group:%-19s (gid %d)", g.Name, g.ID), "group:" + g.Name})
+	}
+	return items
+}
+
+func (m *Model) userItems() []pickItem {
+	var items []pickItem
+	for _, u := range m.users {
+		items = append(items, pickItem{fmt.Sprintf("%-20s (uid %d)", u.Name, u.ID), u.Name})
+	}
+	return items
+}
+
+func presetItems() []pickItem {
+	var items []pickItem
+	for _, p := range delegation.Presets {
+		items = append(items, pickItem{fmt.Sprintf("%-20s %s", p.Name, p.Desc), p.Name})
+	}
+	return items
+}
+
 func (m *Model) openForm(f *form, done func(m *Model) tea.Cmd, abort func(m *Model)) tea.Cmd {
 	m.form, m.formDone, m.formAbort = f, done, abort
 	m.form.resize(min(m.width, 110))
@@ -256,6 +301,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.vp.Width, m.vp.Height = msg.Width, max(3, msg.Height-3)
 		if m.ed != nil {
 			m.ed.setSize(msg.Width, msg.Height)
+		}
+		if m.pk != nil {
+			m.pk.setSize(msg.Width, msg.Height)
 		}
 		if m.form != nil {
 			m.form.resize(min(msg.Width, 110))
@@ -337,6 +385,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateMain(msg)
 	case scrEditor:
 		return m.updateEditor(msg)
+	case scrPicker:
+		switch m.pk.Update(msg) {
+		case pickDone:
+			m.scr = m.prevScr
+			return m, m.pkDone(m, m.pk.Value())
+		case pickCancel:
+			m.scr = m.prevScr
+			if m.pkAbort != nil {
+				m.pkAbort(m)
+			}
+		}
+		return m, nil
 	case scrForm:
 		return m.updateForm(msg)
 	case scrPlan:
@@ -647,11 +707,11 @@ func (m *Model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "A":
 		return m, m.startApply()
 	case "E":
-		m.formVals.s = m.env.Operator.Name
-		return m, m.openForm(identityForm(m.users, &m.formVals.s), func(m *Model) tea.Cmd {
-			m.showEffective(m.formVals.s)
-			return nil
-		}, func(m *Model) { m.scr = scrMain })
+		return m, m.openPicker("Effective permissions of", "What this user may do here, through their own entries, their groups, everyone and the ancestors.",
+			m.userItems(), m.env.Operator.Name, func(m *Model, v string) tea.Cmd {
+				m.showEffective(v)
+				return nil
+			}, nil)
 	case "i":
 		m.showView("Ancestors", m.ancestorsText())
 	case "D":
@@ -704,12 +764,12 @@ func (m *Model) editRow(i int) tea.Cmd {
 }
 
 func (m *Model) pickWho() tea.Cmd {
-	m.formVals.s = m.ed.who.Spec()
+	initial := m.ed.who.Spec()
 	if m.ed.who.Kind != delegation.WhoEveryone && m.ed.who.Name == "" && m.ed.who.ID < 0 {
-		m.formVals.s = ""
+		initial = ""
 	}
-	return m.openForm(whoForm(m.users, m.groups, &m.formVals.s), func(m *Model) tea.Cmd {
-		if m.formVals.s == manualWho {
+	return m.openPicker("Delegate to", "A user gets the permissions directly; a group gives them to all its members.", m.whoItems(), initial, func(m *Model, v string) tea.Cmd {
+		if v == manualWho {
 			m.formVals.s = ""
 			return m.openForm(manualWhoForm(&m.formVals.s), func(m *Model) tea.Cmd {
 				w, err := delegation.ParseWho(m.formVals.s)
@@ -720,7 +780,7 @@ func (m *Model) pickWho() tea.Cmd {
 				return nil
 			}, func(m *Model) { m.scr = scrEditor })
 		}
-		if w, err := delegation.ParseWho(m.formVals.s); err == nil {
+		if w, err := delegation.ParseWho(v); err == nil {
 			m.ed.SetWho(w)
 		}
 		m.scr = scrEditor
@@ -741,14 +801,13 @@ func (m *Model) updateEditor(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case actPickWho:
 		return m, m.pickWho()
 	case actPickPreset:
-		m.formVals.s = ""
-		return m, m.openForm(presetForm(&m.formVals.s), func(m *Model) tea.Cmd {
-			if p, ok := delegation.PresetByName(m.formVals.s); ok {
+		return m, m.openPicker("Preset", "Replaces the current selection with the bundle; tick more afterwards if needed.", presetItems(), "", func(m *Model, v string) tea.Cmd {
+			if p, ok := delegation.PresetByName(v); ok {
 				m.ed.ApplyPreset(p.Perms)
 			}
 			m.scr = scrEditor
 			return nil
-		}, func(m *Model) { m.scr = scrEditor })
+		}, nil)
 	case actOK:
 		m.push()
 		switch m.ed.kind {
@@ -1014,6 +1073,8 @@ func (m *Model) View() string {
 		return m.pickView()
 	case scrEditor:
 		return m.ed.View()
+	case scrPicker:
+		return m.pk.View()
 	case scrForm:
 		return m.frame(m.formTitle(), m.form.View(), "")
 	case scrPlan:
