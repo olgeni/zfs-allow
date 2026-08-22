@@ -1,0 +1,21 @@
+---- Permissions on rpool/test/child ---------------------------------
+Local permissions:
+	user olgeni mount,snapshot
+	user nobody hold
+Local+Descendent permissions:
+	user (unknown: 12345) send
+---- Permissions on rpool/test ---------------------------------------
+Permission sets:
+	@zatest create,mount,snapshot
+Create time permissions:
+	mount,snapshot
+Local permissions:
+	everyone mount
+Descendent permissions:
+	user nobody send
+	group wheel release
+Local+Descendent permissions:
+	user olgeni aclinherit,aclmode,acltype,allow,atime,bookmark,canmount,casesensitivity,change-key,checksum,clone,compression,context,copies,create,dedup,defaultgroupobjquota,defaultgroupquota,defaultprojectobjquota,defaultprojectquota,defaultuserobjquota,defaultuserquota,defcontext,destroy,devices,diff,direct,dnodesize,encryption,exec,filesystem_limit,fscontext,groupobjquota,groupobjused,groupquota,groupused,hold,jailed,keyformat,keylocation,load-key,logbias,longname,mount,mountpoint,nbmand,normalization,overlay,prefetch,primarycache,projectobjquota,projectobjused,projectquota,projectused,promote,quota,readonly,receive,recordsize,redundant_metadata,refquota,refreservation,relatime,release,rename,reservation,rollback,rootcontext,secondarycache,send,send:raw,setuid,share,sharenfs,sharesmb,snapdev,snapdir,snapshot,snapshot_limit,special_small_blocks,sync,userobjquota,userobjused,userprop,userquota,userused,version,vscan,xattr
+	user (unknown: 12345) hold,send
+	group operator bookmark
+	everyone snapshot
