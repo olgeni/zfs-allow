@@ -21,7 +21,8 @@ What it shows
   Ancestors that delegate to their descendants also apply here; i lists them.
 
 Editing
-  Edit an entry (enter/e), add one (a), delete one (d). The editor is a
+  Edit an entry (enter/e), add one (a), delete one (d), revoke it on the
+  whole subtree (R: zfs unallow -r). The editor is a
   grouped checklist of every permission with its description; / filters by
   name or description, space toggles, space on a group header toggles the
   whole group, p loads a preset bundle. Nothing is written until you apply
@@ -60,6 +61,7 @@ var keymap = [][2]string{
 	{"enter, e", "edit the entry"},
 	{"a", "add an entry / create-time permissions / a permission set"},
 	{"d", "delete the entry (all its permissions)"},
+	{"R", "revoke the entry here and on every descendant (zfs unallow -r)"},
 	{"A", "apply: preview the zfs commands, then run them"},
 	{"u", "undo the last edit"},
 	{"r", "reload from the kernel (discarding edits)"},

@@ -148,6 +148,36 @@ func (p *Plan) add(desc string, args ...string) {
 	p.Steps = append(p.Steps, Step{Args: args, Desc: desc})
 }
 
+// RecursiveUnallow is "zfs unallow -r": it removes the permissions (all of
+// them when perms is empty) of w on the dataset and every descendant.
+func RecursiveUnallow(w Who, scope Scope, perms PermSet, ds string) Step {
+	args := append([]string{"unallow", "-r"}, scope.Flags()...)
+	rest := []string{ds}
+	if !perms.Empty() {
+		rest = []string{perms.String(), ds}
+	}
+	args = append(args, whoArgs(w, rest...)...)
+	what := "everything"
+	if !perms.Empty() {
+		what = perms.String()
+	}
+	return Step{Args: args, Desc: fmt.Sprintf("revoke %s from %s on %s and every descendant", what, w, ds)}
+}
+
+// AddRecursive turns the plan's "revoke everything from w" step into a
+// recursive one (zfs unallow -r), or prepends one when w has nothing on the
+// dataset itself.
+func (p *Plan) AddRecursive(w Who) {
+	bare := CommandLine(append([]string{"unallow"}, whoArgs(w, p.Dataset)...))
+	for i, s := range p.Steps {
+		if s.String() == bare {
+			p.Steps[i] = RecursiveUnallow(w, ScopeBoth, nil, p.Dataset)
+			return
+		}
+	}
+	p.Steps = append([]Step{RecursiveUnallow(w, ScopeBoth, nil, p.Dataset)}, p.Steps...)
+}
+
 // Execute runs the steps in order, reporting progress; it does not stop at
 // the first failure (later steps are independent) and returns all errors.
 func (p *Plan) Execute(progress func(done, total int)) []error {

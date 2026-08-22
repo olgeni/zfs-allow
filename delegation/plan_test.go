@@ -167,3 +167,23 @@ func problemStrings(ps []Problem) []string {
 	}
 	return s
 }
+
+func TestRecursive(t *testing.T) {
+	defer fixedResolver()()
+	cur := &Delegations{Dataset: "tank/x"}
+	cur.SetGrant(Grant{User("bob"), ParsePerms("mount"), ParsePerms("mount")})
+	cur.SetGrant(Grant{Group("staff"), ParsePerms("hold"), nil})
+	want := cur.Clone()
+	want.SetGrant(Grant{User("bob"), nil, nil})
+	p := Diff(cur, want)
+	p.AddRecursive(User("bob"))
+	p.AddRecursive(Everyone) // nothing on the dataset itself: prepended
+	got := strings.Join(p.Commands(), "\n")
+	if got != "zfs unallow -r -e tank/x\nzfs unallow -r -u bob tank/x" {
+		t.Fatalf("got:\n%s", got)
+	}
+	s := RecursiveUnallow(Group("staff"), ScopeDescend, ParsePerms("hold,send"), "tank/x")
+	if s.String() != "zfs unallow -r -d -g staff hold,send tank/x" {
+		t.Fatal(s)
+	}
+}

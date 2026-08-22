@@ -52,6 +52,30 @@ func toJSONDelegations(d *delegation.Delegations) jsonDelegations {
 	return j
 }
 
+// fromJSONDelegations is the inverse of toJSONDelegations (for -restore).
+func fromJSONDelegations(j jsonDelegations) *delegation.Delegations {
+	d := &delegation.Delegations{Dataset: j.Dataset, Create: delegation.PermSet(j.Create).With()}
+	for _, s := range j.Sets {
+		d.SetSet(delegation.Set{Name: s.Name, Perms: delegation.PermSet(s.Perms).With()})
+	}
+	for _, g := range j.Grants {
+		w := delegation.Who{Name: g.Who.Name, ID: -1}
+		switch g.Who.Kind {
+		case "group":
+			w.Kind = delegation.WhoGroup
+		case "everyone":
+			w = delegation.Everyone
+		default:
+			w.Kind = delegation.WhoUser
+		}
+		if g.Who.ID != nil {
+			w.ID = *g.Who.ID
+		}
+		d.SetGrant(delegation.Grant{Who: w, Local: delegation.PermSet(g.Local).With(), Descend: delegation.PermSet(g.Descend).With()})
+	}
+	return d
+}
+
 func strs(ps delegation.PermSet) []string {
 	if ps == nil {
 		return []string{}

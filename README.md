@@ -18,14 +18,16 @@ point the user cannot write to, what an unprivileged delegator cannot do).
 
     go install github.com/olgeni/zfs-allow@latest
 
-or `git clone … && go build`.
+or `git clone … && go build`. The man page is `zfs-allow.1`; shell
+completions for zsh, bash and fish are in `completions/`.
 
 ## Interactive
 
     zfs-allow [dataset]
 
 Without a dataset a picker lists every file system and volume, with the
-dataset of the current directory preselected.
+dataset of the current directory preselected; `q`/`esc` from the dataset
+return to the picker.
 
 Main screen: one row per entry (permission sets, create-time permissions,
 then the grants in `zfs allow` order), the ancestors that also delegate to
@@ -36,7 +38,8 @@ this dataset (`i`), and what the current user can do here (`You:` line).
 | enter, e | edit the entry |
 | a | add a grant / create-time permissions / a permission set |
 | d | delete the entry |
-| A | apply: preview the commands, then run them |
+| R | revoke the entry here and on every descendant (`zfs unallow -r`) |
+| A | apply: preview the commands and pre-flight notes, then run them |
 | u | undo · r reload |
 | E | effective permissions of a user here (own, groups, everyone, ancestors, sets expanded — with sources) |
 | i | the ancestors' delegations |
@@ -56,20 +59,27 @@ everything), `x` shows the permissions FreeBSD refuses (`mlslabel`,
 
     zfs-allow -list [-json] [dataset]
     zfs-allow -add WHO -perms P,… [-scope both|local|descendants] [-n|-y|-check] [dataset]
-    zfs-allow -remove WHO [-perms P,…] [-scope S] [-n|-y|-check] [dataset]
+    zfs-allow -remove WHO [-perms P,…] [-scope S] [-r] [-n|-y|-check] [dataset]
     zfs-allow -effective USER [-json] [dataset]
     zfs-allow -where WHO [-json]
+    zfs-allow -dump [-r] [dataset] > F
+    zfs-allow -restore F [-n|-y|-check]
     zfs-allow -catalogue [-json]
 
 `WHO` is `user:NAME`, `group:NAME`, `everyone`, `@SET` (defines/changes a
 permission set) or `create-time`. `-perms` takes catalogue names, `@SET`s and
-`+PRESET`s. `-n` prints the commands, `-check` exits 3 if anything would
-change (for configuration management), `-y` applies without asking. The
-dataset defaults to the one the current directory is on.
+`+PRESET`s. `-r` with `-remove` is `zfs unallow -r` (the dataset and every
+descendant); with `-dump` it includes the descendants. `-n` prints the
+commands, `-check` exits 3 if anything would change (for configuration
+management), `-y` applies without asking. The dataset defaults to the one
+the current directory is on.
 
     $ zfs-allow -add user:bob -perms +snapshots,send -n tank/home/bob
     zfs allow -u bob bookmark,destroy,diff,hold,mount,release,rollback,send,snapshot tank/home/bob
     note: vfs.usermount is 0: unprivileged users cannot mount, so mount and everything that needs it … will fail — sysctl vfs.usermount=1
+
+    # zfs-allow -dump -r tank/home > delegations.json
+    # zfs-allow -restore delegations.json -check || zfs-allow -restore delegations.json -y
 
 ## Things it knows that the man page does not say loudly
 
@@ -97,7 +107,8 @@ dataset defaults to the one the current directory is on.
     go test ./...
 
 The parser is pinned by a golden `zfs allow` output taken on FreeBSD 15 /
-OpenZFS 2.4. Everything else (diff, effective, preflight) is pure.
+OpenZFS 2.4. Everything else (diff, effective, preflight, the editor and the
+pickers) is pure and tested without a pool.
 
 ## License
 

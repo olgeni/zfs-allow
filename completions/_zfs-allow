@@ -1,0 +1,61 @@
+#compdef zfs-allow
+# zsh completion for zfs-allow(1). Install as _zfs-allow somewhere in $fpath
+# (e.g. /usr/local/share/zsh/site-functions/_zfs-allow).
+
+_zfs_allow_datasets() {
+  local -a ds
+  ds=(${(f)"$(zfs list -H -o name -t filesystem,volume 2>/dev/null)"})
+  (( $#ds )) && _describe -t datasets 'dataset' ds
+}
+
+_zfs_allow_who() {
+  if compset -P 'user:'; then
+    _users
+  elif compset -P 'group:'; then
+    _groups
+  else
+    compadd -S '' -- 'user:' 'group:'
+    compadd -- everyone create-time
+    local -a sets
+    sets=(${(f)"$(zfs-allow -list 2>/dev/null | awk '/^\t@/ { print $1 }' | sort -u)"})
+    (( $#sets )) && compadd -- $sets
+  fi
+}
+
+_zfs_allow_who_only() {
+  if compset -P 'user:'; then
+    _users
+  elif compset -P 'group:'; then
+    _groups
+  else
+    compadd -S '' -- 'user:' 'group:'
+    compadd -- everyone
+  fi
+}
+
+_zfs_allow_perms() {
+  local -a perms
+  perms=(${(f)"$(zfs-allow -catalogue 2>/dev/null | awk '/^  [a-z]/ { print $1 }' | sed 's/^+/+/')"})
+  compset -P '*,'
+  compadd -q -S ',' -- $perms
+}
+
+_arguments -s \
+  '-version[print version and exit]' \
+  '-list[print the delegations of the dataset and its ancestors]' \
+  '-add[grant -perms to WHO]:who:_zfs_allow_who' \
+  '-remove[revoke -perms (or everything) from WHO]:who:_zfs_allow_who' \
+  '-perms[permissions, @SETs and +PRESETs]:perms:_zfs_allow_perms' \
+  '-scope[where the grant applies]:scope:(both local descendants)' \
+  '-r[with -remove: every descendant too; with -dump: include descendants]' \
+  '-effective[effective permissions of USER]:user:_users' \
+  '-where[datasets delegating to WHO]:who:_zfs_allow_who_only' \
+  '-dump[JSON snapshot of the delegations]' \
+  '-restore[restore a -dump snapshot]:snapshot file:_files' \
+  '-catalogue[print the permission catalogue and presets]' \
+  '-n[dry run: print the zfs commands]' \
+  '-y[apply without asking]' \
+  '-check[dry run, exit 3 if anything would change]' \
+  '-json[JSON output]' \
+  '-lenient[accept unknown permission names]' \
+  '1:dataset:_zfs_allow_datasets'

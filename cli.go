@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -20,6 +21,9 @@ type cliOptions struct {
 	effective string
 	where     string
 	catalogue bool
+	recursive bool
+	dump      bool
+	restore   string
 	dryRun    bool
 	yes       bool
 	check     bool
@@ -28,7 +32,7 @@ type cliOptions struct {
 }
 
 func (o cliOptions) nonInteractive() bool {
-	return o.list || o.add != "" || o.remove != "" || o.effective != "" || o.where != "" || o.catalogue || o.dryRun || o.check
+	return o.list || o.add != "" || o.remove != "" || o.effective != "" || o.where != "" || o.catalogue || o.dump || o.restore != "" || o.dryRun || o.check
 }
 
 func fail(format string, a ...any) int {
@@ -43,6 +47,8 @@ func runCLI(dataset string, o cliOptions) int {
 		return runCatalogue(o)
 	case o.where != "":
 		return runWhere(o)
+	case o.restore != "":
+		return runRestore(o)
 	}
 	l, err := delegation.Load(dataset)
 	if err != nil {
@@ -51,6 +57,8 @@ func runCLI(dataset string, o cliOptions) int {
 	switch {
 	case o.list:
 		return runList(l, o)
+	case o.dump:
+		return runDump(l, o)
 	case o.effective != "":
 		return runEffective(l, o)
 	case o.add != "" || o.remove != "":
@@ -108,6 +116,17 @@ func runEdit(l *delegation.Listing, o cliOptions) int {
 	if err != nil {
 		return fail("%v", err)
 	}
+	if o.recursive {
+		if !remove {
+			return fail("-r only goes with -remove (zfs allow has no recursive form)")
+		}
+		who, err := delegation.ParseWho(spec)
+		if err != nil {
+			return fail("%v (-r works on users, groups and everyone)", err)
+		}
+		plan := &delegation.Plan{Dataset: l.Dataset.Name, Steps: []delegation.Step{delegation.RecursiveUnallow(who, scope, perms, l.Dataset.Name)}}
+		return runPlan(l, plan, nil, o)
+	}
 	want := l.Own.Clone()
 	switch {
 	case spec == "create-time" || spec == "-c":
@@ -146,7 +165,11 @@ func runEdit(l *delegation.Listing, o cliOptions) int {
 	plan := delegation.Diff(l.Own, want)
 	env := cliEnv(l, o)
 	wl := &delegation.Listing{Dataset: l.Dataset, Own: want, Ancestors: l.Ancestors}
-	probs := delegation.Preflight(wl, plan, env)
+	return runPlan(l, plan, delegation.Preflight(wl, plan, env), o)
+}
+
+// runPlan prints, confirms and runs a plan (the common tail of the editing modes).
+func runPlan(l *delegation.Listing, plan *delegation.Plan, probs []delegation.Problem, o cliOptions) int {
 	if o.check {
 		if plan.Empty() {
 			return 0
@@ -173,13 +196,8 @@ func runEdit(l *delegation.Listing, o cliOptions) int {
 	if o.dryRun {
 		return 0
 	}
-	if !o.yes {
-		fmt.Fprintf(os.Stderr, "Run %d command(s) on %s? [y/N] ", len(plan.Steps), l.Dataset.Name)
-		ans, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-		if a := strings.ToLower(strings.TrimSpace(ans)); a != "y" && a != "yes" {
-			fmt.Fprintln(os.Stderr, "Declined.")
-			return 2
-		}
+	if !o.yes && !confirm(fmt.Sprintf("Run %d command(s) on %s?", len(plan.Steps), l.Dataset.Name)) {
+		return 2
 	}
 	errs := plan.Execute(nil)
 	for _, e := range errs {
@@ -189,6 +207,123 @@ func runEdit(l *delegation.Listing, o cliOptions) int {
 		return 1
 	}
 	fmt.Fprintf(os.Stderr, "Applied %d command(s).\n", len(plan.Steps))
+	return 0
+}
+
+func confirm(q string) bool {
+	fmt.Fprintf(os.Stderr, "%s [y/N] ", q)
+	ans, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	if a := strings.ToLower(strings.TrimSpace(ans)); a == "y" || a == "yes" {
+		return true
+	}
+	fmt.Fprintln(os.Stderr, "Declined.")
+	return false
+}
+
+// runDump prints the delegations of the dataset (and, with -r, of every
+// descendant) as a JSON snapshot.
+func runDump(l *delegation.Listing, o cliOptions) int {
+	var snap []jsonDelegations
+	if o.recursive {
+		list, err := delegation.Descendants(l.Dataset.Name)
+		if err != nil {
+			return fail("%v", err)
+		}
+		for _, d := range list {
+			own, err := delegation.LoadOwn(d.Name)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "zfs-allow: warning:", err)
+				continue
+			}
+			snap = append(snap, toJSONDelegations(own))
+		}
+	} else {
+		snap = append(snap, toJSONDelegations(l.Own))
+	}
+	return printJSON(snap)
+}
+
+// runRestore brings every dataset of a -dump snapshot back to the recorded
+// delegations. Datasets that no longer exist are reported and skipped.
+func runRestore(o cliOptions) int {
+	b, err := os.ReadFile(o.restore)
+	if err != nil {
+		return fail("%v", err)
+	}
+	var snap []jsonDelegations
+	if err := json.Unmarshal(b, &snap); err != nil {
+		return fail("%s: %v", o.restore, err)
+	}
+	var plans []*delegation.Plan
+	var allProbs []delegation.Problem
+	for _, j := range snap {
+		want := fromJSONDelegations(j)
+		l, err := delegation.Load(want.Dataset)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "zfs-allow: warning:", err)
+			continue
+		}
+		plan := delegation.Diff(l.Own, want)
+		if plan.Empty() {
+			continue
+		}
+		plans = append(plans, plan)
+		wl := &delegation.Listing{Dataset: l.Dataset, Own: want, Ancestors: l.Ancestors}
+		for _, p := range delegation.Preflight(wl, plan, cliEnv(l, o)) {
+			p.Msg = want.Dataset + ": " + p.Msg
+			allProbs = append(allProbs, p)
+		}
+	}
+	n := 0
+	for _, p := range plans {
+		n += len(p.Steps)
+	}
+	if o.check {
+		if n == 0 {
+			return 0
+		}
+		return 3
+	}
+	if o.json && o.dryRun {
+		all := &delegation.Plan{}
+		for _, p := range plans {
+			all.Steps = append(all.Steps, p.Steps...)
+		}
+		return printJSON(jsonPlan(all, allProbs))
+	}
+	if n == 0 {
+		fmt.Println("Nothing to do.")
+		return 0
+	}
+	for _, p := range plans {
+		for _, s := range p.Steps {
+			fmt.Println(s)
+		}
+	}
+	for _, p := range allProbs {
+		tag := "note"
+		if p.Fatal {
+			tag = "warning"
+		}
+		fmt.Fprintf(os.Stderr, "%s: %s\n", tag, p.Msg)
+	}
+	if o.dryRun {
+		return 0
+	}
+	if !o.yes && !confirm(fmt.Sprintf("Run %d command(s) on %d dataset(s)?", n, len(plans))) {
+		return 2
+	}
+	failed := 0
+	for _, p := range plans {
+		for _, e := range p.Execute(nil) {
+			fmt.Fprintln(os.Stderr, "zfs-allow:", e)
+			failed++
+		}
+	}
+	if failed > 0 {
+		return 1
+	}
+	fmt.Fprintf(os.Stderr, "Restored %d command(s) on %d dataset(s).\n", n, len(plans))
 	return 0
 }
 

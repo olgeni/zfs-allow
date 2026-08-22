@@ -90,6 +90,41 @@ func Datasets() ([]Dataset, error) {
 	return res, nil
 }
 
+// Descendants lists name and every file system and volume below it, sorted.
+func Descendants(name string) ([]Dataset, error) {
+	out, err := Run("list", "-H", "-p", "-r", "-o", "name,type,mountpoint,mounted", "-t", "filesystem,volume", "-s", "name", name)
+	if err != nil {
+		return nil, err
+	}
+	var res []Dataset
+	sc := bufio.NewScanner(strings.NewReader(out))
+	for sc.Scan() {
+		f := strings.Split(sc.Text(), "\t")
+		if len(f) < 4 {
+			continue
+		}
+		res = append(res, Dataset{Name: f[0], Type: f[1], Mountpoint: f[2], Mounted: f[3] == "yes"})
+	}
+	return res, nil
+}
+
+// LoadOwn reads only the dataset's own delegations (no Info, no ancestors).
+func LoadOwn(name string) (*Delegations, error) {
+	out, err := Run("allow", name)
+	if err != nil {
+		return nil, err
+	}
+	secs, err := Parse(out)
+	if err != nil {
+		return nil, err
+	}
+	own, _ := Split(secs, name)
+	if own == nil {
+		own = &Delegations{Dataset: name}
+	}
+	return own, nil
+}
+
 // Info returns the dataset's type and mount point, or an error if it does
 // not exist (or is a snapshot).
 func Info(name string) (Dataset, error) {

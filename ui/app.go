@@ -58,6 +58,12 @@ type uiRow struct {
 	row  delegation.Row
 }
 
+// histEntry is one undo step: the working copy and the pending purges.
+type histEntry struct {
+	cur    *delegation.Delegations
+	purges []delegation.Who
+}
+
 // Model is the root bubbletea model.
 type Model struct {
 	scr, prevScr screen
@@ -77,7 +83,8 @@ type Model struct {
 	dataset string
 	listing *delegation.Listing
 	cur     *delegation.Delegations
-	history []*delegation.Delegations
+	purges  []delegation.Who // pending "zfs unallow -r" (revoke on the dataset and every descendant)
+	history []histEntry
 	rows    []uiRow
 	cursor  int
 	offset  int
@@ -175,10 +182,12 @@ func (m *Model) load() tea.Cmd {
 func (m *Model) setStatus(s string) { m.status, m.errMsg = s, "" }
 func (m *Model) setError(s string)  { m.errMsg, m.status = s, "" }
 
-func (m *Model) modified() bool { return m.listing != nil && !m.cur.Equal(m.listing.Own) }
+func (m *Model) modified() bool {
+	return m.listing != nil && (!m.cur.Equal(m.listing.Own) || len(m.purges) > 0)
+}
 
 func (m *Model) push() {
-	m.history = append(m.history, m.cur.Clone())
+	m.history = append(m.history, histEntry{m.cur.Clone(), append([]delegation.Who(nil), m.purges...)})
 	if len(m.history) > 100 {
 		m.history = m.history[1:]
 	}
@@ -355,7 +364,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.listing = msg.l
 		m.dataset = msg.l.Dataset.Name
 		m.cur = msg.l.Own.Clone()
-		m.history = nil
+		m.history, m.purges = nil, nil
 		m.rebuildRows()
 		if m.scr == scrBusy {
 			m.scr = scrMain
@@ -619,7 +628,7 @@ func (m *Model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.formVals.yes {
 						if m.fromPicker {
 							m.cur = m.listing.Own.Clone()
-							m.history = nil
+							m.history, m.purges = nil, nil
 							m.rebuildRows()
 							return m.toPicker()
 						}
@@ -710,9 +719,38 @@ func (m *Model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setStatus(fmt.Sprintf("Removed %s (%s)", r.row.Who, strings.ToLower(r.row.Scope.Describe())))
 		}
 		m.rebuildRows()
+	case "R":
+		if len(m.rows) == 0 || m.rows[m.cursor].kind != rkGrant {
+			m.setError("R revokes a user/group/everyone entry here and on every descendant (zfs unallow -r)")
+			return m, nil
+		}
+		w := m.rows[m.cursor].row.Who
+		m.formVals.yes = false
+		return m, m.openForm(confirmForm("Revoke everything from "+w.String()+" on "+m.dataset+" and every descendant?",
+			"zfs unallow -r removes the entry here and on every dataset below; it is planned now and runs when you apply (A).", &m.formVals.yes),
+			func(m *Model) tea.Cmd {
+				m.scr = scrMain
+				if !m.formVals.yes {
+					return nil
+				}
+				m.push()
+				m.cur.SetGrant(delegation.Grant{Who: w})
+				found := false
+				for _, p := range m.purges {
+					if p.Same(w) {
+						found = true
+					}
+				}
+				if !found {
+					m.purges = append(m.purges, w)
+				}
+				m.rebuildRows()
+				m.setStatus(fmt.Sprintf("Revocation of %s on the whole subtree pending — press A to apply", w))
+				return nil
+			}, func(m *Model) { m.scr = scrMain })
 	case "u":
 		if n := len(m.history); n > 0 {
-			m.cur = m.history[n-1]
+			m.cur, m.purges = m.history[n-1].cur, m.history[n-1].purges
 			m.history = m.history[:n-1]
 			m.rebuildRows()
 			m.setStatus("Undone")
@@ -908,6 +946,9 @@ func (m *Model) startApply() tea.Cmd {
 		return nil
 	}
 	m.plan = delegation.Diff(m.listing.Own, m.cur)
+	for _, w := range m.purges {
+		m.plan.AddRecursive(w)
+	}
 	m.probs = delegation.Preflight(m.workingListing(), m.plan, m.env)
 	m.vp.SetContent(m.planText())
 	m.vp.GotoTop()
@@ -1165,6 +1206,13 @@ func (m *Model) mainView() string {
 	if m.modified() {
 		hdr += styleWarn.Render("  ● modified — press A to apply")
 	}
+	if len(m.purges) > 0 {
+		var names []string
+		for _, w := range m.purges {
+			names = append(names, w.String())
+		}
+		hdr += styleWarn.Render("  (subtree revocation pending: " + strings.Join(names, ", ") + ")")
+	}
 	b.WriteString(hdr + "\n")
 	wIdx, wKind, wWho, wScope := 3, 12, 24, 20
 	wPerms := m.width - wIdx - wKind - wWho - wScope - 6
@@ -1235,7 +1283,7 @@ func (m *Model) mainView() string {
 	if status != "" {
 		b.WriteString(" " + status + "\n")
 	} else {
-		b.WriteString(helpLine("enter", "edit", "a", "add", "d", "delete", "A", "apply", "u", "undo", "E", "effective", "i", "ancestors", "D", "datasets", "?", "help", "q/esc", m.backLabel()) + "\n")
+		b.WriteString(helpLine("enter", "edit", "a", "add", "d", "delete", "A", "apply", "u", "undo", "R", "revoke below", "E", "effective", "i", "ancestors", "D", "datasets", "?", "help", "q/esc", m.backLabel()) + "\n")
 	}
 	return b.String()
 }

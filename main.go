@@ -11,7 +11,7 @@ import (
 	"github.com/olgeni/zfs-allow/ui"
 )
 
-const version = "0.1.0"
+const version = "1.0.0"
 
 func main() {
 	flag.Usage = func() {
@@ -19,8 +19,10 @@ func main() {
        zfs-allow -list [-json] [dataset]                       (like zfs allow, plus the ancestors)
        zfs-allow -add WHO -perms P,… [-scope S] [-n|-y|-check] [dataset]
        zfs-allow -remove WHO [-perms P,…] [-scope S] [-n|-y|-check] [dataset]
+       zfs-allow -remove WHO -r [-perms P,…] [-scope S] [-n|-y] [dataset]   (here and every descendant)
        zfs-allow -effective USER [-json] [dataset]             (what USER may do there)
        zfs-allow -where WHO [-json]                            (every dataset delegating to WHO)
+       zfs-allow -dump [-r] [dataset] > F | zfs-allow -restore F [-n|-y|-check]   (snapshot / restore)
        zfs-allow -catalogue [-json]                            (every permission, with descriptions)
 
 WHO is user:NAME, group:NAME, everyone, @SET (a permission set definition) or
@@ -41,6 +43,9 @@ The dataset defaults to the one the current directory is on. Exit status: 0,
 	flag.StringVar(&o.scope, "scope", "both", "with -add/-remove: both (this dataset and descendants, zfs allow without -l/-d), local (-l) or descendants (-d)")
 	flag.StringVar(&o.effective, "effective", "", "non-interactive: print the effective permissions of USER on the dataset, with their sources")
 	flag.StringVar(&o.where, "where", "", "non-interactive: list every dataset that delegates anything to WHO (user:NAME, group:NAME, everyone)")
+	flag.BoolVar(&o.recursive, "r", false, "with -remove: also on every descendant (zfs unallow -r); with -dump: include the descendants")
+	flag.BoolVar(&o.dump, "dump", false, "non-interactive: print a JSON snapshot of the dataset's delegations (with -r: of every descendant too); -restore reads it")
+	flag.StringVar(&o.restore, "restore", "", "non-interactive: bring the datasets recorded in the -dump snapshot FILE back to it (asks unless -y; -n previews; -check exits 3 if anything differs)")
 	flag.BoolVar(&o.catalogue, "catalogue", false, "non-interactive: print the permission catalogue and the presets")
 	flag.BoolVar(&o.dryRun, "n", false, "with -add/-remove: print the zfs commands and change nothing")
 	flag.BoolVar(&o.yes, "y", false, "with -add/-remove: apply without asking")
@@ -65,7 +70,7 @@ The dataset defaults to the one the current directory is on. Exit status: 0,
 	}
 	cwdDS, _ := cwdDataset()
 	if o.nonInteractive() {
-		if dataset == "" && !o.catalogue && o.where == "" {
+		if dataset == "" && !o.catalogue && o.where == "" && o.restore == "" {
 			if cwdDS == "" {
 				fmt.Fprintln(os.Stderr, "zfs-allow: the current directory is not on ZFS; name a dataset")
 				os.Exit(1)

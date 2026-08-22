@@ -1,0 +1,309 @@
+.Dd August 23, 2026
+.Dt ZFS-ALLOW 1
+.Os
+.Sh NAME
+.Nm zfs-allow
+.Nd terminal UI and CLI for ZFS delegated administration
+.Sh SYNOPSIS
+.Nm
+.Op Ar dataset
+.Nm
+.Fl list
+.Op Fl json
+.Op Ar dataset
+.Nm
+.Fl add Ar who
+.Fl perms Ar perms
+.Op Fl scope Ar scope
+.Op Fl n | Fl y | Fl check
+.Op Ar dataset
+.Nm
+.Fl remove Ar who
+.Op Fl perms Ar perms
+.Op Fl scope Ar scope
+.Op Fl r
+.Op Fl n | Fl y | Fl check
+.Op Ar dataset
+.Nm
+.Fl effective Ar user
+.Op Fl json
+.Op Ar dataset
+.Nm
+.Fl where Ar who
+.Op Fl json
+.Nm
+.Fl dump
+.Op Fl r
+.Op Ar dataset
+.Nm
+.Fl restore Ar file
+.Op Fl n | Fl y | Fl check
+.Nm
+.Fl catalogue
+.Op Fl json
+.Nm
+.Fl version
+.Sh DESCRIPTION
+.Nm
+is a front-end for
+.Xr zfs-allow 8 :
+it shows the delegated permissions of a dataset the way
+.Ql zfs allow
+prints them, lets you edit them as a checklist in which every permission is
+described, and turns the edits into the exact
+.Ql zfs allow
+and
+.Ql zfs unallow
+commands, shown for review before they run.
+Pre-flight checks point out what the commands will not achieve: a
+.Sy create
+without
+.Sy mount ,
+.Va vfs.usermount
+set to 0, a mount point the grantee cannot create directories in, and what an
+unprivileged operator may not do.
+.Pp
+Without options
+.Nm
+starts the interactive editor on
+.Ar dataset ;
+without a dataset it first shows a picker of every file system and volume,
+with the dataset of the current directory preselected.
+The options below are the non-interactive modes, for scripts and
+configuration management; there
+.Ar dataset
+defaults to the one the current directory is on.
+.Ss Model
+A dataset's delegations consist of
+.Bl -tag -width "create-time" -compact
+.It entries
+a user, a group or
+.Sy everyone ,
+with the permissions that apply to the dataset itself
+.Pq Ql zfs allow -l
+and the permissions that apply to its descendants
+.Pq Ql zfs allow -d ;
+.Ql zfs allow
+prints their intersection as
+.Dq Local+Descendent ;
+.It sets
+named bundles
+.Pq Ar @name
+that entries on this dataset and its descendants can refer to;
+.It create-time
+permissions granted locally to whoever creates a new descendant file system.
+.El
+.Pp
+Entries of an ancestor that apply to descendants also apply here; the
+interactive
+.Ic i
+key lists them, and
+.Fl effective
+takes them into account.
+.Ss Interactive keys
+.Bl -tag -width "ctrl+s, F10" -compact
+.It Ic enter , e
+edit the entry under the cursor
+.It Ic a
+add an entry, create-time permissions or a permission set
+.It Ic d
+delete the entry
+.It Ic R
+revoke the entry on this dataset and every descendant
+.Pq Ql zfs unallow -r
+.It Ic A
+apply: show the commands and the pre-flight notes, then run them
+.It Ic u , r
+undo the last edit; reload from the kernel
+.It Ic E
+effective permissions of a user here, with every source
+.It Ic i
+the ancestors' delegations
+.It Ic D
+switch dataset
+.It Ic q , esc
+back to the dataset list when the session started there, otherwise quit
+.It Ic ? , h
+help, key list
+.El
+.Pp
+In the editor:
+.Ic /
+filters the permissions by name or description,
+.Ic space
+toggles one permission (on a group header: the whole group),
+.Ic enter
+toggles and moves down,
+.Ic a
+and
+.Ic n
+select all or none of the shown permissions,
+.Ic p
+loads a preset,
+.Ic x
+shows the permissions
+.Fx
+refuses,
+.Ic ctrl+s
+confirms and
+.Ic esc
+cancels.
+.Sh OPTIONS
+.Bl -tag -width indent
+.It Fl list
+Print the delegations of the dataset and of every ancestor that delegates
+anything, in
+.Ql zfs allow
+format.
+.It Fl add Ar who Fl perms Ar perms
+Grant
+.Ar perms
+to
+.Ar who .
+.Ar who
+is
+.Ar user:NAME ,
+.Ar group:NAME ,
+.Sy everyone ,
+.Ar @SET
+.Pq define or extend a permission set
+or
+.Sy create-time .
+.Ar perms
+is a comma-separated list of permission names, permission sets
+.Pq Ar @SET
+and presets
+.Pq Ar +PRESET ;
+.Fl catalogue
+lists them all.
+.It Fl remove Ar who Op Fl perms Ar perms
+Revoke
+.Ar perms
+.Pq or everything without Fl perms
+from
+.Ar who .
+With
+.Fl r
+the revocation is done with
+.Ql zfs unallow -r ,
+on the dataset and every descendant.
+.It Fl scope Ar scope
+With
+.Fl add
+and
+.Fl remove :
+.Sy both
+.Pq the default: the dataset and its descendants, Ql zfs allow No without Fl l No or Fl d ,
+.Sy local
+.Pq Fl l
+or
+.Sy descendants
+.Pq Fl d .
+.It Fl n
+Print the
+.Ql zfs
+commands and the pre-flight notes without running them.
+.It Fl y
+Run the commands without asking.
+.It Fl check
+Dry run that exits 3 if anything would change and 0 if nothing would.
+.It Fl effective Ar user
+Print what
+.Ar user
+may do on the dataset: their own entries, their groups',
+.Sy everyone Ns 's ,
+and the descendant entries of every ancestor, with permission sets expanded
+and every source listed.
+.It Fl where Ar who
+List every dataset on the system that delegates anything to
+.Ar who .
+.It Fl dump
+Print a JSON snapshot of the dataset's delegations; with
+.Fl r
+of every descendant's too.
+.It Fl restore Ar file
+Bring every dataset recorded in a
+.Fl dump
+snapshot back to the recorded delegations; datasets that no longer exist are
+skipped with a warning.
+.Fl n ,
+.Fl y
+and
+.Fl check
+apply.
+.It Fl catalogue
+Print every permission with its kind
+.Pq subcommand, other, property ,
+group and description, and the presets.
+.It Fl json
+JSON output for
+.Fl list ,
+.Fl effective ,
+.Fl where ,
+.Fl catalogue
+and
+.Fl n .
+.It Fl lenient
+Accept permission names that are not in the catalogue
+.Pq a newer OpenZFS may know more .
+.It Fl version
+Print the version and exit.
+.El
+.Sh EXIT STATUS
+0 on success; 1 on error
+.Pq including a refused Ql zfs No command ;
+2 when the confirmation was declined; 3 when
+.Fl check
+found pending changes.
+.Sh EXAMPLES
+Preview the commands that give
+.Sy bob
+the snapshot preset plus
+.Sy send
+on his home dataset:
+.Bd -literal -offset indent
+$ zfs-allow -add user:bob -perms +snapshots,send -n tank/home/bob
+zfs allow -u bob bookmark,destroy,diff,hold,mount,release,rollback,send,snapshot tank/home/bob
+note: vfs.usermount is 0: unprivileged users cannot mount, so mount and everything that needs it ... will fail
+.Ed
+.Pp
+Revoke everything from a departed user on a whole subtree:
+.Bd -literal -offset indent
+# zfs-allow -remove user:bob -r -y tank/home
+.Ed
+.Pp
+Keep the delegations of a subtree under configuration management:
+.Bd -literal -offset indent
+# zfs-allow -dump -r tank/home > delegations.json
+# zfs-allow -restore delegations.json -check || zfs-allow -restore delegations.json -y
+.Ed
+.Sh SEE ALSO
+.Xr facl 1 ,
+.Xr zfs 8 ,
+.Xr zfs-allow 8
+.Sh CAVEATS
+Delegated permissions never override the mount point: to create file systems a
+user also needs to create directories in the parent's mount point
+.Pq chown it, or grant Sy add_subdirectory No with an NFSv4 ACL .
+Unprivileged mounting needs
+.Va vfs.usermount Ns =1 .
+.Pp
+An unprivileged user who holds the
+.Sy allow
+permission can delegate what they hold themselves, but can
+.Ql zfs unallow
+only their own entries and cannot define permission sets; the pre-flight
+says so before the commands run.
+.Pp
+.Sy mlslabel
+and
+.Sy zoned
+are refused on
+.Fx
+.Pq Dq operation not applicable to datasets of this type ,
+the same message an unknown permission name gets.
+.Pp
+.Ql zfs allow
+has no machine-readable output;
+.Nm
+parses its text, which has been stable since Solaris.
