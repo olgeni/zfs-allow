@@ -25,6 +25,8 @@ completions for zsh, bash and fish are in `completions/`.
 
     zfs-allow [dataset]
 
+![main screen](doc/main.png)
+
 Without a dataset a picker lists every file system and volume, with the
 dataset of the current directory preselected; `q`/`esc` from the dataset
 return to the picker.
@@ -45,6 +47,8 @@ this dataset (`i`), and what the current user can do here (`You:` line).
 | i | the ancestors' delegations |
 | D | switch dataset |
 | ? / h | help / keys |
+
+![permission entry](doc/editor.png)
 
 Editor: who (enter picks a user, a group or everyone), scope (this dataset
 and descendants / this dataset only / descendants only), then the

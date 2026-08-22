@@ -532,7 +532,7 @@ func (ed *editor) View() string {
 		b.WriteString("\n")
 	}
 	b.WriteString(" " + styleMuted.Render(fit(note, ed.width-2)) + "\n")
-	b.WriteString(helpLine("space", "toggle", "enter", "toggle+next / on a group: all", "/", "filter", "a", "all shown", "n", "none shown", "p", "presets", "x", "non-FreeBSD", "^S", "OK", "esc", "cancel"))
+	b.WriteString(helpLine("space", "toggle (group: all)", "enter", "toggle+next", "/", "filter", "a/n", "all/none shown", "p", "presets", "x", "non-FreeBSD", "^S", "OK", "esc", "cancel"))
 	return b.String()
 }
 
