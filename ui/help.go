@@ -65,7 +65,7 @@ var keymap = [][2]string{
 	{"r", "reload from the kernel (discarding edits)"},
 	{"E", "effective permissions of a user here"},
 	{"i", "ancestors' delegations that apply here"},
-	{"D", "switch to another dataset"},
+	{"D, esc", "back to the dataset list / switch dataset"},
 	{"?", "help   h  this key list   q  quit"},
 	{"Editor", ""},
 	{"space", "toggle the permission / the whole group / cycle the scope"},

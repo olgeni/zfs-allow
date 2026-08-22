@@ -477,8 +477,9 @@ func (m *Model) updatePick(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch k.String() {
-	case "q", "esc":
-		if m.pickFilter != "" && k.String() == "esc" {
+	case "esc":
+		// esc clears the filter, then goes back to the dataset if one is open
+		if m.pickFilter != "" {
 			m.pickFilter = ""
 			m.clampPick()
 			return m, nil
@@ -487,6 +488,9 @@ func (m *Model) updatePick(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.scr = scrMain
 			return m, nil
 		}
+		m.quitting = true
+		return m, tea.Quit
+	case "q":
 		m.quitting = true
 		return m, tea.Quit
 	case "/":
@@ -591,7 +595,11 @@ func (m *Model) pickView() string {
 	if m.pickDef != "" {
 		def = "● = the dataset of the current directory   "
 	}
-	b.WriteString(" " + styleMuted.Render(def) + helpLine("enter", "open", "/", "filter", "?", "help", "q", "quit"))
+	back := []string{"q", "quit"}
+	if m.listing != nil {
+		back = []string{"esc", "back to " + m.dataset, "q", "quit"}
+	}
+	b.WriteString(" " + styleMuted.Render(def) + helpLine(append([]string{"enter", "open", "/", "filter", "?", "help"}, back...)...))
 	return b.String()
 }
 
@@ -714,12 +722,15 @@ func (m *Model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}, nil)
 	case "i":
 		m.showView("Ancestors", m.ancestorsText())
-	case "D":
+	case "D", "esc", "backspace":
+		// back to the dataset list (esc/backspace read as "back" when the
+		// session started there, D works from anywhere)
 		if m.modified() {
 			m.setError("apply or undo the pending edits before switching dataset")
 			return m, nil
 		}
 		m.pickDef = m.dataset
+		m.pickFilter, m.pickTyping = "", false
 		m.scr = scrPick
 		if m.datasets == nil {
 			return m, loadDatasets
@@ -1210,7 +1221,7 @@ func (m *Model) mainView() string {
 	if status != "" {
 		b.WriteString(" " + status + "\n")
 	} else {
-		b.WriteString(helpLine("enter", "edit", "a", "add", "d", "delete", "A", "apply", "u", "undo", "E", "effective", "i", "ancestors", "D", "dataset", "?", "help", "q", "quit") + "\n")
+		b.WriteString(helpLine("enter", "edit", "a", "add", "d", "delete", "A", "apply", "u", "undo", "E", "effective", "i", "ancestors", "D/esc", "datasets", "?", "help", "q", "quit") + "\n")
 	}
 	return b.String()
 }
