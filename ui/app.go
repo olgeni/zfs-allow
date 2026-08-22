@@ -71,6 +71,7 @@ type Model struct {
 	pickFilter string
 	pickTyping bool
 	pickDef    string // dataset to start on (the cwd's)
+	fromPicker bool   // the session started on the picker: q/esc on the main screen go back to it
 
 	// dataset
 	dataset string
@@ -120,6 +121,7 @@ func New(dataset, pickDef string) *Model {
 	m.vp = viewport.New(80, 20)
 	if dataset == "" {
 		m.scr = scrPick
+		m.fromPicker = true
 	} else {
 		m.scr = scrMain
 	}
@@ -477,20 +479,18 @@ func (m *Model) updatePick(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch k.String() {
-	case "esc":
-		// esc clears the filter, then goes back to the dataset if one is open
+	case "esc", "q":
+		// clear the filter first; then back to the open dataset (when the
+		// session started there) or quit
 		if m.pickFilter != "" {
 			m.pickFilter = ""
 			m.clampPick()
 			return m, nil
 		}
-		if m.listing != nil {
+		if m.listing != nil && !m.fromPicker {
 			m.scr = scrMain
 			return m, nil
 		}
-		m.quitting = true
-		return m, tea.Quit
-	case "q":
 		m.quitting = true
 		return m, tea.Quit
 	case "/":
@@ -595,9 +595,9 @@ func (m *Model) pickView() string {
 	if m.pickDef != "" {
 		def = "● = the dataset of the current directory   "
 	}
-	back := []string{"q", "quit"}
-	if m.listing != nil {
-		back = []string{"esc", "back to " + m.dataset, "q", "quit"}
+	back := []string{"q/esc", "quit"}
+	if m.listing != nil && !m.fromPicker {
+		back = []string{"q/esc", "back to " + m.dataset}
 	}
 	b.WriteString(" " + styleMuted.Render(def) + helpLine(append([]string{"enter", "open", "/", "filter", "?", "help"}, back...)...))
 	return b.String()
@@ -611,17 +611,27 @@ func (m *Model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch k.String() {
-	case "q":
+	case "q", "esc", "backspace":
+		// back: to the dataset list when the session started there, else quit
 		if m.modified() {
 			return m, m.openForm(confirmForm("Discard unsaved changes?", "The delegations have pending edits that were not applied.", &m.formVals.yes),
 				func(m *Model) tea.Cmd {
 					if m.formVals.yes {
+						if m.fromPicker {
+							m.cur = m.listing.Own.Clone()
+							m.history = nil
+							m.rebuildRows()
+							return m.toPicker()
+						}
 						m.quitting = true
 						return tea.Quit
 					}
 					m.scr = scrMain
 					return nil
 				}, nil)
+		}
+		if m.fromPicker {
+			return m, m.toPicker()
 		}
 		m.quitting = true
 		return m, tea.Quit
@@ -722,28 +732,32 @@ func (m *Model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}, nil)
 	case "i":
 		m.showView("Ancestors", m.ancestorsText())
-	case "D", "esc", "backspace":
-		// back to the dataset list (esc/backspace read as "back" when the
-		// session started there, D works from anywhere)
+	case "D":
 		if m.modified() {
 			m.setError("apply or undo the pending edits before switching dataset")
 			return m, nil
 		}
-		m.pickDef = m.dataset
-		m.pickFilter, m.pickTyping = "", false
-		m.scr = scrPick
-		if m.datasets == nil {
-			return m, loadDatasets
-		}
-		for i, d := range m.datasets {
-			if d.Name == m.dataset {
-				m.pickCursor = i
-			}
-		}
-		m.clampPick()
+		return m, m.toPicker()
 	}
 	m.clampCursor()
 	return m, nil
+}
+
+// toPicker shows the dataset list with the cursor on the current dataset.
+func (m *Model) toPicker() tea.Cmd {
+	m.pickDef = m.dataset
+	m.pickFilter, m.pickTyping = "", false
+	m.scr = scrPick
+	if m.datasets == nil {
+		return loadDatasets
+	}
+	for i, d := range m.datasets {
+		if d.Name == m.dataset {
+			m.pickCursor = i
+		}
+	}
+	m.clampPick()
+	return nil
 }
 
 // grantOffset is the index of the first grant row in m.rows.
@@ -1221,9 +1235,16 @@ func (m *Model) mainView() string {
 	if status != "" {
 		b.WriteString(" " + status + "\n")
 	} else {
-		b.WriteString(helpLine("enter", "edit", "a", "add", "d", "delete", "A", "apply", "u", "undo", "E", "effective", "i", "ancestors", "D/esc", "datasets", "?", "help", "q", "quit") + "\n")
+		b.WriteString(helpLine("enter", "edit", "a", "add", "d", "delete", "A", "apply", "u", "undo", "E", "effective", "i", "ancestors", "D", "datasets", "?", "help", "q/esc", m.backLabel()) + "\n")
 	}
 	return b.String()
+}
+
+func (m *Model) backLabel() string {
+	if m.fromPicker {
+		return "back"
+	}
+	return "quit"
 }
 
 // Run starts the TUI. dataset "" opens the picker with pickDef preselected.

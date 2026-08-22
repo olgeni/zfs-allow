@@ -229,7 +229,7 @@ func (ed *editor) Update(msg tea.Msg) editorAction {
 		return actNone
 	}
 	switch km.String() {
-	case "esc":
+	case "esc", "q":
 		if ed.filter != "" {
 			ed.filter = ""
 			ed.rebuild()
