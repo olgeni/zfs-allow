@@ -450,7 +450,7 @@ func (m *Model) clampPick() {
 	if m.pickCursor < 0 {
 		m.pickCursor = 0
 	}
-	h := max(3, m.height-6)
+	h := max(3, m.height-4)
 	if m.pickCursor < m.pickOffset {
 		m.pickOffset = m.pickCursor
 	}
@@ -509,9 +509,9 @@ func (m *Model) updatePick(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "down", "j":
 		m.pickCursor++
 	case "pgup":
-		m.pickCursor -= max(3, m.height-6)
+		m.pickCursor -= max(3, m.height-4)
 	case "pgdown":
-		m.pickCursor += max(3, m.height-6)
+		m.pickCursor += max(3, m.height-4)
 	case "home", "g":
 		m.pickCursor = 0
 	case "end", "G":
@@ -566,7 +566,7 @@ func (m *Model) pickView() string {
 	wName = min(wName, max(20, m.width-2-11-24))
 	wMount := max(10, m.width-wName-2-11-1)
 	b.WriteString(styleHeader.Render(" "+fit("Dataset", wName)+" "+fit("Type", 10)+" "+fit("Mount point", wMount)) + "\n")
-	h := max(3, m.height-6)
+	h := max(3, m.height-4)
 	for i := m.pickOffset; i < len(vis) && i < m.pickOffset+h; i++ {
 		d := m.datasets[vis[i]]
 		indent := strings.Repeat("  ", d.Depth())
