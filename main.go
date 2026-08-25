@@ -11,7 +11,7 @@ import (
 	"github.com/olgeni/zfs-allow/ui"
 )
 
-const version = "1.0.1"
+const version = "1.0.2"
 
 func main() {
 	flag.Usage = func() {
