@@ -76,7 +76,8 @@ permission set) or `create-time`. `-perms` takes catalogue names, `@SET`s and
 descendant); with `-dump` it includes the descendants. `-n` prints the
 commands, `-check` exits 3 if anything would change (for configuration
 management), `-y` applies without asking. The dataset defaults to the one
-the current directory is on.
+the current directory is on; a path on a ZFS file system (`.`,
+`/usr/local/etc`) stands for the dataset holding it.
 
     $ zfs-allow -add user:bob -perms +snapshots,send -n tank/home/bob
     zfs allow -u bob bookmark,destroy,diff,hold,mount,release,rollback,send,snapshot tank/home/bob
