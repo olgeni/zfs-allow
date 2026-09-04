@@ -312,7 +312,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.vp.Width, m.vp.Height = msg.Width, max(3, msg.Height-3)
+		// the plan and the text screens are a title bar, the body and a help line
+		m.vp.Width, m.vp.Height = msg.Width, max(3, msg.Height-2)
 		if m.ed != nil {
 			m.ed.setSize(msg.Width, msg.Height)
 		}
