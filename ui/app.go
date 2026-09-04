@@ -74,7 +74,7 @@ type Model struct {
 	datasets   []delegation.Dataset
 	pickCursor int
 	pickOffset int
-	pickFilter string
+	pickFilter editLine
 	pickTyping bool
 	pickDef    string // dataset to start on (the cwd's)
 	fromPicker bool   // the session started on the picker: q/esc on the main screen go back to it
@@ -125,6 +125,8 @@ type Model struct {
 // New creates the model; dataset "" starts on the picker with pickDef selected.
 func New(dataset, pickDef string) *Model {
 	m := &Model{dataset: dataset, pickDef: pickDef, editIdx: -1, width: 80, height: 24}
+	m.pickFilter = newEditLine("")
+	m.pickFilter.Focus()
 	m.vp = viewport.New(80, 20)
 	// ←/→ scroll the plan and the text screens sideways when a line is
 	// wider than the terminal
@@ -436,7 +438,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // ---------------------------------------------------------------- picker
 
 func (m *Model) pickVisible() []int {
-	f := strings.ToLower(m.pickFilter)
+	f := strings.ToLower(m.pickFilter.Value())
 	var idx []int
 	for i, d := range m.datasets {
 		if f == "" || strings.Contains(strings.ToLower(d.Name), f) {
@@ -471,20 +473,18 @@ func (m *Model) updatePick(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.pickTyping {
 		switch k.String() {
 		case "esc":
-			m.pickFilter, m.pickTyping = "", false
+			m.pickFilter.Set("")
+			m.pickTyping = false
 		case "enter", "up", "down":
 			m.pickTyping = false
 			if k.String() != "enter" {
 				return m.updatePick(msg)
 			}
 			return m.pickEnter()
-		case "backspace":
-			if m.pickFilter != "" {
-				m.pickFilter = m.pickFilter[:len(m.pickFilter)-1]
-			}
 		default:
-			if k.Type == tea.KeyRunes {
-				m.pickFilter += k.String()
+			// every other key edits the filter, inside it as well as
+			// at its end
+			if m.pickFilter.Update(k) {
 				m.pickCursor = 0
 			}
 		}
@@ -495,8 +495,8 @@ func (m *Model) updatePick(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "esc", "q":
 		// clear the filter first; then back to the open dataset (when the
 		// session started there) or quit
-		if m.pickFilter != "" {
-			m.pickFilter = ""
+		if !m.pickFilter.Empty() {
+			m.pickFilter.Set("")
 			m.clampPick()
 			return m, nil
 		}
@@ -548,8 +548,8 @@ func (m *Model) pickView() string {
 		return b.String() + "\n  Listing datasets…\n"
 	}
 	f := ""
-	if m.pickFilter != "" || m.pickTyping {
-		f = "   filter: " + styleFocus.Render("/"+m.pickFilter)
+	if !m.pickFilter.Empty() || m.pickTyping {
+		f = "   filter: " + styleFocus.Render("/") + m.pickFilter.View()
 		if m.pickTyping {
 			f += styleFocus.Render("▏")
 		}
@@ -562,7 +562,7 @@ func (m *Model) pickView() string {
 	for _, i := range vis {
 		d := m.datasets[i]
 		n := len([]rune(d.Name))
-		if m.pickFilter == "" && d.Depth() > 0 {
+		if m.pickFilter.Empty() && d.Depth() > 0 {
 			n = 2*d.Depth() + 2 + len([]rune(d.Name[strings.LastIndexByte(d.Name, '/')+1:]))
 		}
 		wName = max(wName, n)
@@ -574,11 +574,11 @@ func (m *Model) pickView() string {
 	for i := m.pickOffset; i < len(vis) && i < m.pickOffset+h; i++ {
 		d := m.datasets[vis[i]]
 		indent := strings.Repeat("  ", d.Depth())
-		if m.pickFilter != "" {
+		if !m.pickFilter.Empty() {
 			indent = ""
 		}
 		name := indent + d.Name
-		if m.pickFilter == "" && d.Depth() > 0 {
+		if m.pickFilter.Empty() && d.Depth() > 0 {
 			name = indent + "└ " + d.Name[strings.LastIndexByte(d.Name, '/')+1:]
 		}
 		typ := d.Type
@@ -788,7 +788,8 @@ func (m *Model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 // toPicker shows the dataset list with the cursor on the current dataset.
 func (m *Model) toPicker() tea.Cmd {
 	m.pickDef = m.dataset
-	m.pickFilter, m.pickTyping = "", false
+	m.pickFilter.Set("")
+	m.pickTyping = false
 	m.scr = scrPick
 	if m.datasets == nil {
 		return loadDatasets

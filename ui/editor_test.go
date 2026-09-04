@@ -32,8 +32,8 @@ func TestEditorFilter(t *testing.T) {
 	for _, k := range []string{"/", "s", "n", "a", "p"} {
 		ed.Update(kmsg(k))
 	}
-	if ed.filter != "snap" || !ed.typing {
-		t.Fatalf("filter %q typing %v", ed.filter, ed.typing)
+	if ed.filter.Value() != "snap" || !ed.typing {
+		t.Fatalf("filter %q typing %v", ed.filter.Value(), ed.typing)
 	}
 	v := ed.View()
 	if !strings.Contains(v, "filter:") || !strings.Contains(v, "snapshot") || strings.Contains(v, "[x] mount") {
@@ -50,7 +50,7 @@ func TestEditorFilter(t *testing.T) {
 		t.Fatal("space did not toggle")
 	}
 	// esc clears the filter, second esc cancels
-	if ed.Update(kmsg("esc")) != actNone || ed.filter != "" {
+	if ed.Update(kmsg("esc")) != actNone || !ed.filter.Empty() {
 		t.Fatal("esc did not clear the filter")
 	}
 	if ed.Update(kmsg("esc")) != actCancel {

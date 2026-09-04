@@ -60,7 +60,7 @@ type editor struct {
 	rows    []edRow
 	cursor  int
 	col     int // buttons: 0 OK, 1 Cancel
-	filter  string
+	filter  editLine
 	typing  bool // keystrokes go to the filter
 	showAll bool // include permissions zfs refuses on FreeBSD
 	width   int
@@ -70,6 +70,8 @@ type editor struct {
 
 func newEditor(kind editKind, dataset string, who delegation.Who, scope delegation.Scope, perms delegation.PermSet, sets []string, width, height int) *editor {
 	ed := &editor{kind: kind, dataset: dataset, who: who, scope: scope, perms: perms.With(), sets: sets, width: width, height: height}
+	ed.filter = newEditLine("")
+	ed.filter.Focus()
 	ed.rebuild()
 	// start on the first permission row for sets/create-time, on who for grants
 	if kind != editGrant {
@@ -105,7 +107,7 @@ func (ed *editor) rebuild() {
 	if ed.kind == editGrant {
 		ed.rows = append(ed.rows, edRow{kind: erWho}, edRow{kind: erScope})
 	}
-	f := strings.ToLower(strings.TrimSpace(ed.filter))
+	f := strings.ToLower(strings.TrimSpace(ed.filter.Value()))
 	match := func(p delegation.Perm) bool {
 		if f == "" {
 			return true
@@ -205,24 +207,18 @@ func (ed *editor) Update(msg tea.Msg) editorAction {
 	if ed.typing {
 		switch km.String() {
 		case "esc":
-			ed.filter, ed.typing = "", false
+			ed.filter.Set("")
+			ed.typing = false
 			ed.rebuild()
 		case "enter", "down", "up", "tab":
 			ed.typing = false
 			if km.String() == "down" || km.String() == "up" {
 				return ed.Update(km)
 			}
-		case "backspace":
-			if ed.filter != "" {
-				ed.filter = ed.filter[:len(ed.filter)-1]
-				ed.rebuild()
-			}
-		case "ctrl+u":
-			ed.filter = ""
-			ed.rebuild()
 		default:
-			if km.Type == tea.KeyRunes || km.String() == " " {
-				ed.filter += km.String()
+			// every other key edits the filter, inside it as well as
+			// at its end
+			if ed.filter.Update(km) {
 				ed.rebuild()
 			}
 		}
@@ -230,8 +226,8 @@ func (ed *editor) Update(msg tea.Msg) editorAction {
 	}
 	switch km.String() {
 	case "esc", "q":
-		if ed.filter != "" {
-			ed.filter = ""
+		if !ed.filter.Empty() {
+			ed.filter.Set("")
 			ed.rebuild()
 			return actNone
 		}
@@ -258,7 +254,7 @@ func (ed *editor) Update(msg tea.Msg) editorAction {
 		ed.nextSection(-1)
 	case "home", "g":
 		ed.cursor = 0
-		if ed.filter != "" {
+		if !ed.filter.Empty() {
 			ed.cursor = ed.firstPermRow()
 		}
 	case "end", "G":
@@ -426,12 +422,14 @@ func (ed *editor) View() string {
 	b.WriteString(styleTitle.Width(ed.width).Render(ed.title()) + "\n")
 	// summary line
 	sum := fmt.Sprintf("%d selected", len(ed.perms))
-	if ed.filter != "" || ed.typing {
-		f := ed.filter
+	if !ed.filter.Empty() || ed.typing {
+		f := styleFocus.Render("/")
 		if ed.typing {
-			f += "▏"
+			f += ed.filter.View()
+		} else {
+			f += styleFocus.Render(ed.filter.Value())
 		}
-		sum += "   filter: " + styleFocus.Render("/"+f)
+		sum += "   filter: " + f
 	}
 	switch ed.kind {
 	case editSet:

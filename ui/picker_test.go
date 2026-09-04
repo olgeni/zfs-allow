@@ -39,7 +39,7 @@ func TestPickerFilterResetsCursor(t *testing.T) {
 	if p.Update(tea.KeyMsg{Type: tea.KeyEnter}) != pickNone || p.Value() != "" {
 		t.Fatal("enter on no match")
 	}
-	if p.Update(tea.KeyMsg{Type: tea.KeyEscape}) != pickNone || p.filter != "" {
+	if p.Update(tea.KeyMsg{Type: tea.KeyEscape}) != pickNone || !p.filter.Empty() {
 		t.Fatal("esc clears the filter")
 	}
 	if p.Update(tea.KeyMsg{Type: tea.KeyEscape}) != pickCancel {
