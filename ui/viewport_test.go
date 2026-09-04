@@ -33,3 +33,23 @@ func TestViewScrollsSideways(t *testing.T) {
 		t.Errorf("new text:\n%s", m.View())
 	}
 }
+
+func TestTabbedLongLineKeepsTheLastLines(t *testing.T) {
+	m := New("tank/home", "")
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+	// a tab-indented line wider than the screen, followed by the last lines
+	var lines []string
+	for i := 0; i < 20; i++ {
+		lines = append(lines, "line")
+	}
+	lines = append(lines, "\tKEY: "+strings.Repeat("x", 300), "}", "THE END")
+	m.showView("cfg", strings.Join(lines, "\n"))
+	m.vp.GotoBottom()
+	v := m.View()
+	if !strings.Contains(v, "THE END") || !strings.Contains(v, "}") || !strings.Contains(v, "        KEY: xxx") {
+		t.Errorf("the end of the text is not shown:\n%s", v)
+	}
+	if expandTabs("a\tb\n\tc") != "a       b\n        c" {
+		t.Errorf("expandTabs: %q", expandTabs("a\tb\n\tc"))
+	}
+}

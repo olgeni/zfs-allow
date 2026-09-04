@@ -953,7 +953,7 @@ func (m *Model) startApply() tea.Cmd {
 		m.plan.AddRecursive(w)
 	}
 	m.probs = delegation.Preflight(m.workingListing(), m.plan, m.env)
-	m.vp.SetContent(m.planText())
+	m.vp.SetContent(expandTabs(m.planText()))
 	m.vp.GotoTop()
 	m.vp.SetXOffset(0)
 	m.prevScr, m.scr = scrMain, scrPlan
@@ -1045,9 +1045,37 @@ func wrapText(s string, width int, indent string) string {
 // horizontalStep is how many columns ←/→ move a viewport screen.
 const horizontalStep = 20
 
+// expandTabs turns tabs into spaces before a text reaches the viewport:
+// the viewport cuts long lines at the width counting a tab as no cell,
+// lipgloss then renders it as four spaces, and the line that is now too
+// wide wraps onto a second row that pushes the last lines of the text
+// past the bottom, where they are dropped.
+func expandTabs(s string) string {
+	if !strings.Contains(s, "\t") {
+		return s
+	}
+	var b strings.Builder
+	col := 0
+	for _, r := range s {
+		switch r {
+		case '\t':
+			n := 8 - col%8
+			b.WriteString(strings.Repeat(" ", n))
+			col += n
+		case '\n':
+			b.WriteRune(r)
+			col = 0
+		default:
+			b.WriteRune(r)
+			col++
+		}
+	}
+	return b.String()
+}
+
 func (m *Model) showView(title, text string) {
 	m.vpTitle = title
-	m.vp.SetContent(text)
+	m.vp.SetContent(expandTabs(text))
 	m.vp.GotoTop()
 	m.vp.SetXOffset(0)
 	if m.scr != scrView {
