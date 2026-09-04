@@ -74,7 +74,7 @@ var keymap = [][2]string{
 	{"space", "toggle the permission / the whole group / cycle the scope"},
 	{"enter", "toggle and move down; on Who: choose the grantee"},
 	{"←/→", "change the scope, move between OK and Cancel"},
-	{"/", "filter by name or description (esc clears)"},
+	{"/", "filter by name or description (arrows edit it, esc clears)"},
 	{"a / n", "select all / none of the shown permissions"},
 	{"p", "load a preset bundle"},
 	{"x", "show permissions FreeBSD refuses (mlslabel, zoned)"},
