@@ -126,6 +126,9 @@ type Model struct {
 func New(dataset, pickDef string) *Model {
 	m := &Model{dataset: dataset, pickDef: pickDef, editIdx: -1, width: 80, height: 24}
 	m.vp = viewport.New(80, 20)
+	// ←/→ scroll the plan and the text screens sideways when a line is
+	// wider than the terminal
+	m.vp.SetHorizontalStep(horizontalStep)
 	if dataset == "" {
 		m.scr = scrPick
 		m.fromPicker = true
@@ -952,6 +955,7 @@ func (m *Model) startApply() tea.Cmd {
 	m.probs = delegation.Preflight(m.workingListing(), m.plan, m.env)
 	m.vp.SetContent(m.planText())
 	m.vp.GotoTop()
+	m.vp.SetXOffset(0)
 	m.prevScr, m.scr = scrMain, scrPlan
 	return nil
 }
@@ -1038,10 +1042,14 @@ func wrapText(s string, width int, indent string) string {
 
 // ---------------------------------------------------------------- views
 
+// horizontalStep is how many columns ←/→ move a viewport screen.
+const horizontalStep = 20
+
 func (m *Model) showView(title, text string) {
 	m.vpTitle = title
 	m.vp.SetContent(text)
 	m.vp.GotoTop()
+	m.vp.SetXOffset(0)
 	if m.scr != scrView {
 		m.prevScr = m.scr
 	}
@@ -1144,9 +1152,9 @@ func (m *Model) View() string {
 	case scrForm:
 		return m.frame(m.formTitle(), m.form.View(), "")
 	case scrPlan:
-		return m.frame("Apply changes to "+m.dataset, m.vp.View(), helpLine("y/enter", "run the commands", "esc", "back", "↑/↓", "scroll"))
+		return m.frame("Apply changes to "+m.dataset, m.vp.View(), helpLine("y/enter", "run the commands", "esc", "back", "↑/↓ ←/→", "scroll"))
 	case scrView:
-		return m.frame(m.vpTitle, m.vp.View(), helpLine("esc", "back", "↑/↓", "scroll"))
+		return m.frame(m.vpTitle, m.vp.View(), helpLine("esc", "back", "↑/↓ ←/→", "scroll"))
 	case scrBusy:
 		return m.frame("zfs-allow", "\n  "+m.busyMsg+"\n", "")
 	}
